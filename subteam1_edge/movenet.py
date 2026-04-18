@@ -48,8 +48,9 @@ SKELETON_CONNECTIONS = [
     (12, 14), (14, 16)  # Right leg
 ]
 
-# MoveNet Thunder model URL (as per paper - Thunder for higher accuracy)
+# MoveNet URLs
 MOVENET_THUNDER_URL = "https://tfhub.dev/google/movenet/singlepose/thunder/4"
+MOVENET_LIGHTNING_URL = "https://tfhub.dev/google/movenet/singlepose/lightning/4"
 
 
 class MoveNetPoseEstimator:
@@ -63,18 +64,22 @@ class MoveNetPoseEstimator:
         - Confidence threshold: 0.8 for reliable detection
     """
     
-    def __init__(self):
-        """Initialize MoveNet Thunder model."""
-        self.input_size = 256  # Thunder uses 256x256
+    def __init__(self, use_lightning=False):
+        """Initialize MoveNet model."""
+        self.use_lightning = use_lightning
+        # Thunder uses 256x256, Lightning uses 192x192
+        self.input_size = 192 if use_lightning else 256  
         self.model = None
         self.movenet = None
         
         if TF_AVAILABLE:
-            print("Loading MoveNet Thunder model...")
+            model_name = "Lightning (Fast)" if use_lightning else "Thunder (Accurate)"
+            url = MOVENET_LIGHTNING_URL if use_lightning else MOVENET_THUNDER_URL
+            print(f"Loading MoveNet {model_name} model...")
             try:
-                self.model = hub.load(MOVENET_THUNDER_URL)
+                self.model = hub.load(url)
                 self.movenet = self.model.signatures['serving_default']
-                print("MoveNet Thunder loaded successfully.")
+                print(f"MoveNet {model_name} loaded successfully.")
             except Exception as e:
                 print(f"Error loading MoveNet: {e}")
                 self.model = None

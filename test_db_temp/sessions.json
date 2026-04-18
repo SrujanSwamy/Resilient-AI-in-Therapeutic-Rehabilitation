@@ -1,0 +1,1 @@
+{"sessions": {"1": {"patient_id": "p001", "exercise_id": "Ex1", "correctness": 1, "confidence": 0.9, "rmse": 0.2, "compensation_found": false, "compensation_types": [], "fluidity_score": 0.8, "fluidity_interpretation": "Good", "session_id": "e3df2d76-6466-4d4a-bc7d-b149cbdedcea", "timestamp": "2026-04-18T11:17:37.650231", "frame_data": []}}}

@@ -7,9 +7,26 @@ scipy>=1.7.0
 matplotlib>=3.4.0
 opencv-python>=4.5.0
 
-# Deep Learning - MoveNet & CNN Classifier (as per research paper)
+# Deep Learning - MoveNet & CNN Classifier + LSTM Fluidity (as per research paper)
 tensorflow>=2.10.0
 tensorflow-hub>=0.12.0
 
 # Document generation
 python-docx>=0.8.10
+
+# ── End-Semester Cloud Stack ───────────────────────────────────────────
+# REST API
+fastapi>=0.100.0
+uvicorn>=0.20.0
+
+# Clinician Dashboard
+flask>=2.3.0
+
+# NoSQL Database (file-based, zero server setup)
+tinydb>=4.7.0
+
+# XML processing (already in stdlib, lxml for faster parsing optionally)
+lxml>=4.9.0
+
+# Publisher-Subscriber (optional ZeroMQ transport)
+pyzmq>=25.0.0

@@ -35,6 +35,9 @@ from normalization import SkeletonNormalizer
 from reference_model import ReferenceModel
 from comparison import MovementComparator, compute_rmse
 from confidence import ConfidenceScorer, CONFIDENCE_THRESHOLD
+from imputation import JointImputer
+from compensation import CompensationDetector
+from fluidity import FluididtyAnalyzer
 
 
 class CNNClassifier:
@@ -295,11 +298,16 @@ class ExerciseClassifier:
         self.reference_model = ReferenceModel(dataset_path)
         self.comparator = None
         self.confidence_scorer = ConfidenceScorer()
-        
+
+        # End-Semester enhancements
+        self.imputer = JointImputer(confidence_threshold=0.3)
+        self.compensation_detector = CompensationDetector(severity_threshold=0.3)
+        self.fluidity_analyzer = FluididtyAnalyzer(target_frames=48)
+
         # Classifiers
         self.cnn_classifier = None
         self.threshold_classifier = ThresholdClassifier() if use_threshold else None
-        
+
         # Training state
         self.is_trained = False
         self.target_frames = 50
@@ -331,34 +339,37 @@ class ExerciseClassifier:
         
         if not os.path.exists(filepath):
             return None
-        
+
         data = np.load(filepath)
-        
+
         # Extract segment
         first_frame = max(0, first_frame)
         last_frame = min(len(data), last_frame)
         segment = data[first_frame:last_frame]
-        
+
         if len(segment) < 5:
             return None
-        
+
         # Convert to 17 keypoints with confidence
         if segment.shape[1] >= 17:
             keypoints = segment[:, :17, :2]
         else:
             keypoints = np.zeros((len(segment), 17, 2))
             keypoints[:, :segment.shape[1], :] = segment[:, :, :2]
-        
+
         # Add confidence
         confidence = np.ones((len(keypoints), 17, 1))
         keypoints_with_conf = np.concatenate([keypoints, confidence], axis=2)
-        
+
+        # --- End-Sem Enhancement: Impute missing joints ---
+        keypoints_with_conf, _ = self.imputer.impute_sequence(keypoints_with_conf)
+
         # Normalize
         normalized = self.normalizer.normalize_sequence(keypoints_with_conf)
-        
+
         # Resample to target length
         resampled = self._resample(normalized[:, :, :2], self.target_frames)
-        
+
         return resampled
     
     def _resample(self, sequence: np.ndarray, target_length: int) -> np.ndarray:
@@ -546,9 +557,26 @@ class ExerciseClassifier:
         else:
             results['final_prediction'] = None
             results['prediction_method'] = 'None'
-        
+
         results['label'] = 'Correct' if results['final_prediction'] == 1 else 'Incorrect'
-        
+
+        # --- End-Sem Enhancement: Compensation Detection ---
+        ref_mean = None
+        if self.comparator is not None:
+            ref_mean = self.comparator.reference_mean
+        comp_result = self.compensation_detector.detect(sample, self.exercise_id, ref_mean)
+        results['compensation_found'] = comp_result['compensation_found']
+        results['compensation_types'] = comp_result['types']
+        results['compensation_severity'] = comp_result['severity']
+        results['compensation_feedback'] = self.compensation_detector.get_feedback_message(comp_result)
+
+        # --- End-Sem Enhancement: Fluidity Analysis ---
+        fluidity_result = self.fluidity_analyzer.analyze(sample)
+        results['fluidity_score'] = fluidity_result['overall_fluidity']
+        results['fluidity_jerk'] = fluidity_result['jerk_score']
+        results['fluidity_velocity'] = fluidity_result['velocity_consistency']
+        results['fluidity_interpretation'] = fluidity_result['interpretation']
+
         return results
     
     def evaluate(self, camera: str = "c17", fps: int = 30) -> Dict:

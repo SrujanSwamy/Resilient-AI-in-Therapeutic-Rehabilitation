@@ -31,6 +31,10 @@ from reference_model import ReferenceModel
 from comparison import MovementComparator, compute_rmse
 from confidence import ConfidenceScorer, CONFIDENCE_THRESHOLD
 from classifier import ExerciseClassifier, CNNClassifier, ThresholdClassifier
+# End-Semester enhancements
+from imputation import JointImputer
+from compensation import CompensationDetector
+from fluidity import FluididtyAnalyzer
 
 
 def print_header():
@@ -60,9 +64,9 @@ def demo_module1():
     estimator = MoveNetPoseEstimator()
     
     if estimator.model is not None:
-        print("  [✓] MoveNet Thunder loaded successfully")
-        print(f"  [✓] Input size: {estimator.input_size}x{estimator.input_size}")
-        print(f"  [✓] Output: 17 keypoints (x, y, confidence)")
+        print("  [OK] MoveNet Thunder loaded successfully")
+        print(f"  [OK] Input size: {estimator.input_size}x{estimator.input_size}")
+        print(f"  [OK] Output: 17 keypoints (x, y, confidence)")
     else:
         print("  [!] MoveNet loading failed")
 
@@ -87,7 +91,7 @@ def demo_module2():
     # Verify normalization
     new_hip = (normalized[11, :2] + normalized[12, :2]) / 2
     print(f"  Normalized hip center: [{new_hip[0]:.4f}, {new_hip[1]:.4f}] (should be ~0)")
-    print("  [✓] Normalization complete")
+    print("  [OK] Normalization complete")
 
 
 def demo_module3(dataset_path: str, exercise_id: str):
@@ -100,10 +104,10 @@ def demo_module3(dataset_path: str, exercise_id: str):
     
     try:
         stats = model.build_from_samples(exercise_id, camera="c17", fps=30, target_frames=50)
-        print(f"  [✓] Reference model built for {exercise_id}")
-        print(f"  [✓] Samples used: {stats['num_samples']}")
-        print(f"  [✓] Target frames: {stats['target_frames']}")
-        print(f"  [✓] Reference shape: {stats['mean_shape']}")
+        print(f"  [OK] Reference model built for {exercise_id}")
+        print(f"  [OK] Samples used: {stats['num_samples']}")
+        print(f"  [OK] Target frames: {stats['target_frames']}")
+        print(f"  [OK] Reference shape: {stats['mean_shape']}")
         return model
     except Exception as e:
         print(f"  [!] Error: {e}")
@@ -183,7 +187,7 @@ def demo_module4(reference_model: ReferenceModel, dataset_path: str, exercise_id
         print(f"    RMSE: {metrics_incorrect['overall_rmse']:.4f}")
         print(f"    Mean Euclidean: {metrics_incorrect['mean_euclidean']:.4f}")
     
-    print("  [✓] Comparison metrics computed")
+    print("  [OK] Comparison metrics computed")
 
 
 def demo_module5(dataset_path: str, exercise_id: str, evaluate: bool = False):
@@ -197,11 +201,11 @@ def demo_module5(dataset_path: str, exercise_id: str, evaluate: bool = False):
     print(f"  Confidence Threshold: {CONFIDENCE_THRESHOLD}")
     
     test_rmse = [0.02, 0.05, 0.1, 0.2]
-    print("\n  RMSE → Confidence mapping:")
+    print("\n  RMSE -> Confidence mapping:")
     for rmse in test_rmse:
         conf = scorer.score_from_rmse(rmse)
         status = "Reliable" if conf >= CONFIDENCE_THRESHOLD else "Warning"
-        print(f"    RMSE={rmse:.2f} → Confidence={conf:.3f} → {status}")
+        print(f"    RMSE={rmse:.2f} -> Confidence={conf:.3f} -> {status}")
     
     # Full classifier
     print("\n  Training classifiers (CNN + Threshold)...")
@@ -221,7 +225,7 @@ def demo_module5(dataset_path: str, exercise_id: str, evaluate: bool = False):
             epochs=50  # Reduced for demo (paper uses 200)
         )
         
-        print(f"\n  [✓] Training Complete")
+        print(f"\n  [OK] Training Complete")
         print(f"      Total samples: {train_results['total_samples']}")
         
         if 'threshold_classifier' in train_results:
@@ -277,6 +281,112 @@ def demo_module5(dataset_path: str, exercise_id: str, evaluate: bool = False):
         traceback.print_exc()
 
 
+# ======================================================================
+# END-SEMESTER MODULE DEMOS
+# ======================================================================
+
+def demo_imputation():
+    """Demonstrate Joint Imputation Module."""
+    print("\n" + "-"*60)
+    print("MODULE: Joint Imputation (End-Semester)")
+    print("-"*60)
+    import numpy as np
+    seq = np.random.rand(30, 17, 3)
+    seq[:, :, 2] = 0.9
+    seq[5:10, 9, 2] = 0.1   # left wrist missing
+    seq[15, 14, 2] = 0.0    # right knee missing
+    seq[:, 3, 2] = 0.0      # left ear always missing
+
+    imputer = JointImputer(confidence_threshold=0.3)
+    _, report = imputer.impute_sequence(seq)
+    print(f"  [OK] Total missing:      {report['total_missing']}")
+    print(f"  [OK] Temporal filled:    {report['temporal']}")
+    print(f"  [OK] Spatial filled:     {report['spatial']}")
+    print(f"  [OK] Motion predicted:   {report['motion']}")
+    print(f"  [OK] Still unfilled:     {report['unfilled']}")
+
+
+def demo_compensation(dataset_path: str, exercise_id: str):
+    """Demonstrate Compensation Detection Module."""
+    print("\n" + "-"*60)
+    print("MODULE: Compensation Detection (End-Semester)")
+    print("-"*60)
+    import numpy as np
+    import pandas as pd
+    import os
+
+    # Load one real sample and inject a trunk lean
+    seg_path = os.path.join(dataset_path, "Segmentation.csv")
+    seg_df = pd.read_csv(seg_path, sep=';')
+    ex_num = int(exercise_id.replace('Ex', ''))
+    row = seg_df[seg_df['exercise_id'] == ex_num].iloc[0]
+    fname = f"{row['video_id']}-c17-30fps.npy"
+    fpath = os.path.join(dataset_path, "2d_joints", exercise_id, fname)
+
+    if os.path.exists(fpath):
+        raw = np.load(fpath)
+        seg = raw[int(row['first_frame']):int(row['last_frame'])]
+        kp = seg[:, :17, :2] if raw.shape[1] >= 17 else np.zeros((len(seg), 17, 2))
+        norm = SkeletonNormalizer()
+        conf = np.ones((len(kp), 17, 1))
+        normalised = norm.normalize_sequence(np.concatenate([kp, conf], axis=2))[:, :, :2]
+
+        # Inject trunk lean in second half
+        n = len(normalised)
+        normalised[n//2:, 5:7, 0] -= 0.3  # shift shoulders left
+        normalised[n//2:, 11:13, 0] -= 0.3  # shift hips left
+
+        detector = CompensationDetector()
+        result = detector.detect(normalised, exercise_id)
+        print(f"  [{'OK' if result['compensation_found'] else ' '}] Compensation found: {result['compensation_found']}")
+        print(f"  [OK] Types detected: {result['types'] if result['types'] else 'None'}")
+        print(f"  [OK] Severity: {result['severity']:.2f}")
+        print(f"  [OK] Feedback: {detector.get_feedback_message(result).splitlines()[0]}")
+    else:
+        print(f"  [!] Sample file not found, running with synthetic data")
+        seq = np.zeros((50, 17, 2))
+        seq[25:, 5:7, 0] -= 0.3
+        detector = CompensationDetector()
+        result = detector.detect(seq, exercise_id)
+        print(f"  [OK] Compensation found: {result['compensation_found']}")
+        print(f"  [OK] Types: {result['types']}")
+
+
+def demo_fluidity(dataset_path: str, exercise_id: str):
+    """Demonstrate LSTM Fluidity Analysis."""
+    print("\n" + "-"*60)
+    print("MODULE: LSTM Fluidity Analysis (End-Semester)")
+    print("-"*60)
+    import numpy as np
+    import os, pandas as pd
+
+    norm = SkeletonNormalizer()
+    analyzer = FluididtyAnalyzer()
+    seg_path = os.path.join(dataset_path, "Segmentation.csv")
+    seg_df = pd.read_csv(seg_path, sep=';')
+    ex_num = int(exercise_id.replace('Ex', ''))
+    ex_df = seg_df[seg_df['exercise_id'] == ex_num].head(3)
+
+    for _, row in ex_df.iterrows():
+        fname = f"{row['video_id']}-c17-30fps.npy"
+        fpath = os.path.join(dataset_path, "2d_joints", exercise_id, fname)
+        if not os.path.exists(fpath):
+            continue
+        raw = np.load(fpath)
+        seg = raw[int(row['first_frame']):int(row['last_frame'])]
+        if len(seg) < 5:
+            continue
+        kp = seg[:, :17, :2] if raw.shape[1] >= 17 else np.zeros((len(seg), 17, 2))
+        conf = np.ones((len(kp), 17, 1))
+        normalised = norm.normalize_sequence(np.concatenate([kp, conf], axis=2))[:, :, :2]
+        result = analyzer.analyze(normalised)
+        label = 'Correct' if row['correctness'] == 1 else 'Incorrect'
+        print(f"  {row['video_id']} ({label}):")
+        print(f"    jerk={result['jerk_score']:.3f}  vel={result['velocity_consistency']:.3f}  fluidity={result['overall_fluidity']:.3f}")
+        print(f"    -> {result['interpretation']}")
+    print("  [OK] Fluidity analysis complete")
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -307,8 +417,8 @@ def main():
     parser.add_argument(
         '--module',
         type=int,
-        choices=[1, 2, 3, 4, 5],
-        help='Demo specific module only'
+        choices=[1, 2, 3, 4, 5, 6, 7, 8, 9],
+        help='Demo specific module only (6=imputation, 7=compensation, 8=fluidity, 9=full e2e cloud)'
     )
     
     args = parser.parse_args()
@@ -334,18 +444,41 @@ def main():
             demo_module4(ref_model, args.dataset, args.exercise)
         elif args.module == 5:
             demo_module5(args.dataset, args.exercise, args.evaluate)
+        elif args.module == 6:
+            demo_imputation()
+        elif args.module == 7:
+            demo_compensation(args.dataset, args.exercise)
+        elif args.module == 8:
+            demo_fluidity(args.dataset, args.exercise)
+        elif args.module == 9:
+            # Full end-to-end cloud pipeline
+            sys.path.insert(0, os.path.dirname(__file__))
+            from subteam2_cloud.pipeline_integration import run_full_pipeline
+            run_full_pipeline(
+                exercise_id=args.exercise,
+                dataset_path=args.dataset,
+                n_demo_samples=5,
+                train_classifier=True,
+            )
     elif args.train_only:
         # Just train Module 5
         demo_module5(args.dataset, args.exercise, args.evaluate)
     else:
-        # Run all modules in sequence
-        print("Running complete pipeline (Modules 1-5)...")
-        
+        # Run all modules in sequence (Modules 1-5 + End-Semester)
+        print("Running complete pipeline (Modules 1-5 + End-Semester enhancements)...")
+
         demo_module1()
         demo_module2()
         ref_model = demo_module3(args.dataset, args.exercise)
         demo_module4(ref_model, args.dataset, args.exercise)
         demo_module5(args.dataset, args.exercise, args.evaluate)
+
+        print("\n" + "-"*60)
+        print("END-SEMESTER ENHANCEMENTS")
+        print("-"*60)
+        demo_imputation()
+        demo_compensation(args.dataset, args.exercise)
+        demo_fluidity(args.dataset, args.exercise)
     
     print("\n" + "="*70)
     print("  PIPELINE COMPLETE")

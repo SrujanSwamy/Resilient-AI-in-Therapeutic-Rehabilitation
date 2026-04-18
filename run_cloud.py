@@ -106,6 +106,22 @@ def run_e2e_demo(exercise_id: str = "Ex1", dataset_path: str = "dataset"):
     )
 
 
+def run_live_webcam(exercise_id: str = "Ex1", dataset_path: str = "dataset",
+                   camera: int = 0, patient: str = "webcam_patient",
+                   no_movenet: bool = False):
+    """Launch live webcam exercise feedback."""
+    sys.path.insert(0, os.path.join(ROOT, 'subteam1_edge'))
+    from live_webcam import run_live
+    run_live(
+        exercise_id=exercise_id,
+        dataset_path=dataset_path,
+        camera_idx=camera,
+        use_movenet=not no_movenet,
+        patient_id=patient,
+        db_path="rehab_data",
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="RehabAI Cloud Server Launcher",
@@ -123,11 +139,18 @@ Examples:
     parser.add_argument("--api", action="store_true", help="Start FastAPI REST API")
     parser.add_argument("--both", action="store_true", help="Start dashboard + API")
     parser.add_argument("--demo", metavar="EXERCISE", help="Run end-to-end demo (e.g. Ex1)")
+    parser.add_argument("--live", metavar="EXERCISE",
+                        help="Start live webcam mode (e.g. --live Ex1)")
     parser.add_argument("--dataset", default="dataset", help="Dataset path for demo")
     parser.add_argument("--seed", action="store_true", help="Seed DB with synthetic demo data")
     parser.add_argument("--dash-port", type=int, default=5000)
     parser.add_argument("--api-port", type=int, default=8000)
     parser.add_argument("--no-dash", action="store_true", help="Do not start dashboard")
+    parser.add_argument("--camera", type=int, default=0, help="Webcam camera index")
+    parser.add_argument("--no-movenet", action="store_true",
+                        help="Disable MoveNet in webcam mode (synthetic skeleton)")
+    parser.add_argument("--patient", default="webcam_patient",
+                        help="Patient ID for webcam session")
     args = parser.parse_args()
 
     print("\n" + "="*60)
@@ -148,6 +171,23 @@ Examples:
             print(f"  [!] Demo error: {e}")
             import traceback
             traceback.print_exc()
+
+    # Live webcam mode
+    if args.live:
+        print(f"\nStarting live webcam for {args.live}...")
+        try:
+            run_live_webcam(
+                exercise_id=args.live,
+                dataset_path=args.dataset,
+                camera=args.camera,
+                patient=args.patient,
+                no_movenet=args.no_movenet,
+            )
+        except Exception as e:
+            print(f"  [!] Live webcam error: {e}")
+            import traceback
+            traceback.print_exc()
+        return
 
     # Start servers
     start_api_flag = args.api or args.both
